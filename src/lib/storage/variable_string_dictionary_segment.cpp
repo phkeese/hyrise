@@ -132,11 +132,17 @@ std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::
   }
 
   const auto attribute_vector_size = _attribute_vector->size();
-  // TODO:: remover static cast
-  auto chunk_offset_to_value_id = pmr_vector<uint32_t>{static_cast<unsigned int>(attribute_vector_size)};
+  auto chunk_offset_to_value_id = pmr_vector<uint32_t>(attribute_vector_size);
 
+  const auto value_id_null = null_value_id();
+  const auto klotz_offset_null = _dictionary->size();
   for (auto chunk_offset = ChunkOffset{0}; chunk_offset < attribute_vector_size; ++chunk_offset) {
-    chunk_offset_to_value_id[chunk_offset] = reverse_offset_vector[_decompressor->get(chunk_offset)];
+    const auto offset = _decompressor->get(chunk_offset);
+    if (offset == klotz_offset_null) {
+      chunk_offset_to_value_id[chunk_offset] = value_id_null;
+    } else {
+      chunk_offset_to_value_id[chunk_offset] = reverse_offset_vector[offset];
+    }
   }
 
   const auto allocator = PolymorphicAllocator<T>{};
@@ -149,6 +155,11 @@ std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::
       ));
 
   return compressed_chunk_offset_to_value_id;
+}
+
+template <typename T>
+std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::attribute_vector_offsets() const {
+  return _attribute_vector;
 }
 
 template <typename T>

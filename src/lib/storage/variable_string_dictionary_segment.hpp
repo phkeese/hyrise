@@ -87,6 +87,12 @@ class VariableStringDictionarySegment : public BaseDictionarySegment {
   ValueID::base_type unique_values_count() const final;
 
   std::shared_ptr<const BaseCompressedVector> attribute_vector() const final;
+
+  /**
+   *
+   * @return The actual, internal attribute vector, storing a mapping chunk_offset -> klotz_offset.
+   */
+  std::shared_ptr<const BaseCompressedVector> attribute_vector_offsets() const;
   // ValueID -> Offset : ok (offset_vector)
   // Offset -> ValueId : need
   /* Idea 1: Use ValueID to index into offsets to get offsets
