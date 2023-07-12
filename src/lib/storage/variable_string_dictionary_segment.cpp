@@ -124,7 +124,31 @@ ValueID::base_type VariableStringDictionarySegment<T>::unique_values_count() con
 
 template <typename T>
 std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::attribute_vector() const {
-  return _attribute_vector;
+  auto reverse_offset_vector = std::unordered_map<uint32_t, ValueID>();
+  const auto offsets_size = unique_values_count();
+  for (auto value_id = ValueID{0}; value_id < offsets_size; ++value_id) {
+    const auto offset = (*_offset_vector)[value_id];
+    reverse_offset_vector.insert({offset, value_id});
+  }
+
+  const auto attribute_vector_size = _attribute_vector->size();
+  // TODO:: remover static cast
+  auto chunk_offset_to_value_id = pmr_vector<uint32_t>{static_cast<unsigned int>(attribute_vector_size)};
+
+  for (auto chunk_offset = ChunkOffset{0}; chunk_offset < attribute_vector_size; ++chunk_offset) {
+    chunk_offset_to_value_id[chunk_offset] = reverse_offset_vector[_decompressor->get(chunk_offset)];
+  }
+
+  const auto allocator = PolymorphicAllocator<T>{};
+  auto compressed_chunk_offset_to_value_id = std::shared_ptr<const BaseCompressedVector>(
+      compress_vector(
+          chunk_offset_to_value_id,
+          VectorCompressionType::FixedWidthInteger,
+          allocator,
+          {offsets_size}
+      ));
+
+  return compressed_chunk_offset_to_value_id;
 }
 
 template <typename T>
