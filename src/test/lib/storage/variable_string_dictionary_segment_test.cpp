@@ -136,12 +136,18 @@ TEST_F(StorageVariableStringDictionarySegmentTest, MemoryUsageEstimation) {
       vs_str, DataType::String, SegmentEncodingSpec{EncodingType::VariableStringDictionary});
   const auto dictionary_segment = std::dynamic_pointer_cast<VariableStringDictionarySegment<pmr_string>>(compressed_segment);
 
-  static constexpr auto size_of_attribute = 1u;
-  static constexpr auto size_of_dictionary = 3u;
+  static constexpr auto size_of_attribute_vector_entry = 1u;
+  static constexpr auto size_of_dictionary = 6u;
+  static constexpr auto size_of_offset_vector_entry = sizeof(uint32_t);
 
-  // We have to substract 1 since the empty VariableStringSegment actually contains one null terminator
   EXPECT_EQ(dictionary_segment->memory_usage(MemoryUsageCalculationMode::Full),
-            empty_memory_usage - 1u + 3 * size_of_attribute + size_of_dictionary);
+            empty_memory_usage + 3 * (size_of_attribute_vector_entry + size_of_offset_vector_entry) + size_of_dictionary);
+
+  // Attribute vector with value ids only calculated after first use of attribute vector.
+  // Has same size as attribute vector with offsets.
+  dictionary_segment->attribute_vector();
+  EXPECT_EQ(dictionary_segment->memory_usage(MemoryUsageCalculationMode::Full),
+            empty_memory_usage + 3 * (2u * size_of_attribute_vector_entry + size_of_offset_vector_entry) + size_of_dictionary);
 }
 
 TEST_F(StorageVariableStringDictionarySegmentTest, TestOffsetVector) {

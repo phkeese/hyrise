@@ -54,7 +54,13 @@ std::shared_ptr<AbstractSegment> VariableStringDictionarySegment<T>::copy_using_
 
 template <typename T>
 size_t VariableStringDictionarySegment<T>::memory_usage(const MemoryUsageCalculationMode  /*mode*/) const {
-  return _attribute_vector->data_size() + _dictionary->capacity() + _offset_vector->capacity();
+  using OffsetVectorType = typename std::decay<decltype(*_offset_vector->begin())>::type;
+  auto size_attribute_vector_with_value_ids = size_t{0};
+  if (_attribute_vector_with_value_ids) {
+    size_attribute_vector_with_value_ids = _attribute_vector_with_value_ids->data_size();
+  }
+  return _attribute_vector->data_size() + _dictionary->capacity() +
+         _offset_vector->capacity() * sizeof(OffsetVectorType) + size_attribute_vector_with_value_ids;
 }
 
 template <typename T>
@@ -123,7 +129,7 @@ ValueID::base_type VariableStringDictionarySegment<T>::unique_values_count() con
 }
 
 template <typename T>
-std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::attribute_vector() const {
+std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::_create_attribute_vector_with_value_ids() const {
   auto reverse_offset_vector = std::unordered_map<uint32_t, ValueID>();
   const auto offsets_size = unique_values_count();
   for (auto value_id = ValueID{0}; value_id < offsets_size; ++value_id) {
@@ -152,9 +158,17 @@ std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::
           VectorCompressionType::FixedWidthInteger,
           allocator,
           {offsets_size}
-      ));
-
+          ));
   return compressed_chunk_offset_to_value_id;
+}
+
+template <typename T>
+std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::attribute_vector() const {
+  if (!_attribute_vector_with_value_ids) {
+    _attribute_vector_with_value_ids = _create_attribute_vector_with_value_ids();
+  }
+
+  return _attribute_vector_with_value_ids;
 }
 
 template <typename T>
