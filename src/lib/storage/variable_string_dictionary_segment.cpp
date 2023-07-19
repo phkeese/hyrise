@@ -47,13 +47,14 @@ std::shared_ptr<AbstractSegment> VariableStringDictionarySegment<T>::copy_using_
   auto new_attribute_vector = _attribute_vector->copy_using_allocator(alloc);
   auto new_dictionary = std::make_shared<pmr_vector<char>>(*_dictionary, alloc);
   auto new_offset = std::make_shared<pmr_vector<uint32_t>>(*_offset_vector, alloc);
-  auto copy = std::make_shared<VariableStringDictionarySegment>(std::move(new_dictionary), std::move(new_attribute_vector), std::move(new_offset));
+  auto copy = std::make_shared<VariableStringDictionarySegment>(std::move(new_dictionary),
+                                                                std::move(new_attribute_vector), std::move(new_offset));
   copy->access_counter = access_counter;
   return copy;
 }
 
 template <typename T>
-size_t VariableStringDictionarySegment<T>::memory_usage(const MemoryUsageCalculationMode  /*mode*/) const {
+size_t VariableStringDictionarySegment<T>::memory_usage(const MemoryUsageCalculationMode /*mode*/) const {
   using OffsetVectorType = typename std::decay<decltype(*_offset_vector->begin())>::type;
   auto size_attribute_vector_with_value_ids = size_t{0};
   if (_attribute_vector_with_value_ids) {
@@ -76,16 +77,15 @@ EncodingType VariableStringDictionarySegment<T>::encoding_type() const {
 template <typename T>
 ValueID VariableStringDictionarySegment<T>::lower_bound(const AllTypeVariant& value) const {
   DebugAssert(!variant_is_null(value), "Null value passed.");
-//  access_counter[SegmentAccessCounter::AccessType::Dictionary] +=
-//      static_cast<uint64_t>(std::ceil(std::log2(_offset_vector->size())));
+  //  access_counter[SegmentAccessCounter::AccessType::Dictionary] +=
+  //      static_cast<uint64_t>(std::ceil(std::log2(_offset_vector->size())));
   const auto typed_value = boost::get<pmr_string>(value);
 
   auto args = std::vector<ValueID>(_offset_vector->size());
   std::iota(args.begin(), args.end(), 0);
-  auto it = std::lower_bound(args.cbegin(), args.cend(), typed_value,
-                             [this](const ValueID valueId, const auto to_find) {
-                               return typed_value_of_value_id(valueId) < to_find;
-                             });
+  auto it = std::lower_bound(
+      args.cbegin(), args.cend(), typed_value,
+      [this](const ValueID valueId, const auto to_find) { return typed_value_of_value_id(valueId) < to_find; });
   if (it == args.cend()) {
     return INVALID_VALUE_ID;
   }
@@ -95,16 +95,15 @@ ValueID VariableStringDictionarySegment<T>::lower_bound(const AllTypeVariant& va
 template <typename T>
 ValueID VariableStringDictionarySegment<T>::upper_bound(const AllTypeVariant& value) const {
   DebugAssert(!variant_is_null(value), "Null value passed.");
-//  access_counter[SegmentAccessCounter::AccessType::Dictionary] +=
-//    static_cast<uint64_t>(std::ceil(std::log2(_offset_vector->size())));
+  //  access_counter[SegmentAccessCounter::AccessType::Dictionary] +=
+  //    static_cast<uint64_t>(std::ceil(std::log2(_offset_vector->size())));
   const auto typed_value = boost::get<pmr_string>(value);
 
   auto args = std::vector<ValueID>(_offset_vector->size());
   std::iota(args.begin(), args.end(), 0);
-  auto it = std::upper_bound(args.cbegin(), args.cend(), typed_value,
-                             [this](const auto to_find, const ValueID valueID) {
-                               return to_find < typed_value_of_value_id(valueID);
-                             });
+  auto it = std::upper_bound(
+      args.cbegin(), args.cend(), typed_value,
+      [this](const auto to_find, const ValueID valueID) { return to_find < typed_value_of_value_id(valueID); });
   if (it == args.cend()) {
     return INVALID_VALUE_ID;
   }
@@ -129,7 +128,8 @@ ValueID::base_type VariableStringDictionarySegment<T>::unique_values_count() con
 }
 
 template <typename T>
-std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::_create_attribute_vector_with_value_ids() const {
+std::shared_ptr<const BaseCompressedVector>
+VariableStringDictionarySegment<T>::_create_attribute_vector_with_value_ids() const {
   auto reverse_offset_vector = std::unordered_map<uint32_t, ValueID>();
   const auto offsets_size = unique_values_count();
   for (auto value_id = ValueID{0}; value_id < offsets_size; ++value_id) {
@@ -153,12 +153,7 @@ std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::
 
   const auto allocator = PolymorphicAllocator<T>{};
   auto compressed_chunk_offset_to_value_id = std::shared_ptr<const BaseCompressedVector>(
-      compress_vector(
-          chunk_offset_to_value_id,
-          VectorCompressionType::FixedWidthInteger,
-          allocator,
-          {offsets_size}
-          ));
+      compress_vector(chunk_offset_to_value_id, VectorCompressionType::FixedWidthInteger, allocator, {offsets_size}));
   return compressed_chunk_offset_to_value_id;
 }
 

@@ -16,17 +16,17 @@ class BaseCompressedVector;
  *
  * Uses vector compression schemes for its attribute vector.
  */
-template<typename T>
+template <typename T>
 class VariableStringDictionarySegment : public BaseDictionarySegment {
  public:
   VariableStringDictionarySegment(const std::shared_ptr<const pmr_vector<char>>& dictionary,
                                   const std::shared_ptr<const BaseCompressedVector>& attribute_vector,
                                   const std::shared_ptr<const pmr_vector<uint32_t>>& offset_vector);
 
-  // TODO:: remove
-  VariableStringDictionarySegment() : BaseDictionarySegment(DataType::String) {};
+  // TODO(student): remove
+  VariableStringDictionarySegment() : BaseDictionarySegment(DataType::String) {}
 
-  // TODO:: Does this make sense?
+  // TODO(student): Does this make sense?
   // returns an underlying dictionary
   std::shared_ptr<const pmr_vector<char>> dictionary() const;
 

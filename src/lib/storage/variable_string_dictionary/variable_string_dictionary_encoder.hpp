@@ -65,7 +65,7 @@ class VariableStringDictionaryEncoder : public SegmentEncoder<VariableStringDict
       total_size += value.size() + 1;
     }
 
-    // TODO::(us) reserve instead of resize, beware null terminators
+    // TODO(student): reserve instead of resize, beware null terminators
     auto klotz = std::make_shared<pmr_vector<char>>(pmr_vector<char>(total_size));
     // We assume segment size up to 4 GByte.
     auto string_offsets = std::unordered_map<pmr_string, uint32_t>();
@@ -102,11 +102,12 @@ class VariableStringDictionaryEncoder : public SegmentEncoder<VariableStringDict
     }
 
     const auto max_value_id = current_value_id;
-    const auto compressed_chunk_offset_to_klotz_offset = std::shared_ptr<const BaseCompressedVector>(
-        compress_vector(*chunk_offset_to_klotz_offset, SegmentEncoder<VariableStringDictionaryEncoder>::vector_compression_type(),
-                        allocator, {max_value_id}));
+    const auto compressed_chunk_offset_to_klotz_offset = std::shared_ptr<const BaseCompressedVector>(compress_vector(
+        *chunk_offset_to_klotz_offset, SegmentEncoder<VariableStringDictionaryEncoder>::vector_compression_type(),
+        allocator, {max_value_id}));
 
-    return std::make_shared<VariableStringDictionarySegment<pmr_string>>(klotz, compressed_chunk_offset_to_klotz_offset, offset_vector);
+    return std::make_shared<VariableStringDictionarySegment<pmr_string>>(klotz, compressed_chunk_offset_to_klotz_offset,
+                                                                         offset_vector);
   }
 };
 
