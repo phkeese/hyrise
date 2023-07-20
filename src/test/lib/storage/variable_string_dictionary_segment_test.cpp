@@ -131,6 +131,7 @@ TEST_F(StorageVariableStringDictionarySegmentTest, MemoryUsageEstimation) {
 TEST_F(StorageVariableStringDictionarySegmentTest, TestOffsetVector) {
   vs_str->append("ThisIsAVeryLongStringThisIsAVeryLongStringThisIsAVeryLongString");
   vs_str->append("QuiteShort");
+  vs_str->append("QuiteShort");
   vs_str->append("Short");
 
   auto segment = ChunkEncoder::encode_segment(vs_str, DataType::String,
@@ -138,7 +139,22 @@ TEST_F(StorageVariableStringDictionarySegmentTest, TestOffsetVector) {
   auto dict_segment = std::dynamic_pointer_cast<VariableStringDictionarySegment<pmr_string>>(segment);
   const auto offset_vector = dict_segment->offset_vector();
   EXPECT_EQ(offset_vector->size(), 3);
-  // TODO(student): Add more tests.
+  EXPECT_EQ(offset_vector->operator[](0), 0);
+  EXPECT_EQ(offset_vector->operator[](1), 11);
+  EXPECT_EQ(offset_vector->operator[](2), 17);
+}
+
+TEST_F(StorageVariableStringDictionarySegmentTest, TestAttributeVector) {
+  vs_str->append("ThisIsAVeryLongStringThisIsAVeryLongStringThisIsAVeryLongString");
+  vs_str->append("QuiteShort");
+  vs_str->append("QuiteShort");
+  vs_str->append("Short");
+
+  auto segment = ChunkEncoder::encode_segment(vs_str, DataType::String,
+                                              SegmentEncodingSpec{EncodingType::VariableStringDictionary});
+  auto dict_segment = std::dynamic_pointer_cast<VariableStringDictionarySegment<pmr_string>>(segment);
+  const auto attribute_vector = dict_segment->attribute_vector();
+  EXPECT_EQ(attribute_vector->size(), 4);
 }
 
 TEST_F(StorageVariableStringDictionarySegmentTest, TestLookup) {
