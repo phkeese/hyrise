@@ -218,4 +218,37 @@ TEST_F(StorageVariableStringDictionarySegmentTest, TestIterable) {
   });
 }
 
+TEST_F(StorageVariableStringDictionarySegmentTest, TestVectorIterator) {
+  auto value_segment = std::make_shared<ValueSegment<pmr_string>>(true);
+  value_segment->append("Bill");
+  value_segment->append("");
+  value_segment->append("Steve");
+  value_segment->append(NULL_VALUE);
+  value_segment->append("Bill");
+  auto segment = ChunkEncoder::encode_segment(value_segment, DataType::String,
+                                              SegmentEncodingSpec{EncodingType::VariableStringDictionary});
+  auto dict_segment = std::dynamic_pointer_cast<VariableStringDictionarySegment<pmr_string>>(segment);
+
+  auto variable_string_vector = dict_segment->variable_string_dictionary();
+  auto it = variable_string_vector->begin();
+
+  EXPECT_EQ("", *it++);
+  EXPECT_EQ("Bill", *it++);
+  EXPECT_EQ("Steve", *it++);
+
+  auto first = variable_string_vector->begin();
+  auto second = first + 1;
+  auto third = first + 2;
+
+  EXPECT_EQ("", *first);
+  EXPECT_EQ("Bill", *second);
+  EXPECT_EQ("Steve", *third);
+
+  EXPECT_EQ(1, second - first);
+  EXPECT_EQ(2, third - first);
+  EXPECT_EQ(-1, first - second);
+
+  EXPECT_EQ("Bill", *--third);
+}
+
 }  // namespace hyrise
