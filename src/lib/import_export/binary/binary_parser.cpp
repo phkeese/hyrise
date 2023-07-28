@@ -207,15 +207,25 @@ std::shared_ptr<DictionarySegment<T>> BinaryParser::_import_dictionary_segment(s
 template <typename T>
 std::shared_ptr<VariableStringDictionarySegment<T>> BinaryParser::_import_variable_string_length_segment(
     std::ifstream& file, ChunkOffset row_count) {
+
+  // Compression used for ChunkOffset -> Klotz offset
+  const auto attribute_vector_encoding = _read_value<CompressedVectorTypeID>(file);
+
+  // Size of Klotz (uint32_t, not size_t due to limitations)
+  const auto klotz_size = _read_value<uint32_t>(file);
+  // Klotz's bytes
+  auto klotz = _read_values<char>(file, klotz_size);
+
+  // Compressed offsets, using previously read value
+  auto attribute_vector = _import_attribute_vector(file, row_count, attribute_vector_encoding);
+
+  // Length of chunk offset vector (ValueID)
   const auto offset_vector_size = _read_value<ValueID>(file);
+  // Offsets for ValueIDs
   auto offset_vector = _read_values<uint32_t>(file, offset_vector_size);
-  const auto compressed_vector_type_id = _read_value<CompressedVectorTypeID>(file);
-  const auto dictionary_size = _read_value<ValueID>(file);
-  auto dictionary = _read_values<char>(file, dictionary_size);
-  auto attribute_vector = _import_attribute_vector(file, row_count, compressed_vector_type_id);
 
   return std::make_shared<VariableStringDictionarySegment<pmr_string>>(
-      std::make_shared<pmr_vector<char>>(dictionary),
+      std::make_shared<pmr_vector<char>>(klotz),
       attribute_vector,
       std::make_shared<pmr_vector<uint32_t>>(std::move(offset_vector))
   );

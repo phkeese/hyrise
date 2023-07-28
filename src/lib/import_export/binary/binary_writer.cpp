@@ -345,14 +345,14 @@ void BinaryWriter::_write_segment(const VariableStringDictionarySegment<T>& dict
   export_value(ofstream, compressed_vector_type_id);
 
   // Write the dictionary size and dictionary
-  export_value(ofstream, static_cast<ValueID::base_type>(dictionary_segment.dictionary()->size()));
+  export_value(ofstream, static_cast<uint32_t>(dictionary_segment.dictionary()->size()));
   export_values(ofstream, *dictionary_segment.dictionary());
 
-  // Write attribute vector
+  // Write ChunkOffset -> Klotz offset mapping
   _export_compressed_vector(ofstream, *dictionary_segment.compressed_vector_type(),
-                            *dictionary_segment.attribute_vector());
+                            *dictionary_segment.attribute_vector_offsets());
 
-  // Write offset vector
+  // Write ChunkOffset  vector
   export_value(ofstream, static_cast<ValueID::base_type>(dictionary_segment.offset_vector()->size()));
   export_values(ofstream, *dictionary_segment.offset_vector());
 }
