@@ -20,6 +20,26 @@ VariableStringDictionarySegment<T>::VariableStringDictionarySegment(
   // For a VariableStringDictionarySegment of the max size Chunk::MAX_SIZE, those two values overlap.
 
   Assert(_offset_vector->size() < std::numeric_limits<ValueID::base_type>::max(), "Input segment too big");
+
+#ifdef HYRISE_DEBUG
+  // Sanity check inputs. Every offset should be preceded by a \0 (except first).
+  for (const auto offset : *offset_vector) {
+    if (offset == 0) {
+      continue;
+    }
+
+    DebugAssert((*dictionary)[offset - 1] == '\0', "Klotz offset in offset_vector does not point to start of string.");
+  }
+
+  // Similar check for attribute vector.
+  for (auto index = size_t{0}; index < _attribute_vector->size(); index++) {
+    const auto offset = _decompressor->get(index);
+    if (offset == 0)
+      continue;
+
+    DebugAssert((*dictionary)[offset - 1] == '\0', "Klotz offset in attribute_vector does not point to start of string.");
+  }
+#endif
 }
 
 template <typename T>
@@ -161,11 +181,6 @@ VariableStringDictionarySegment<T>::_create_attribute_vector_with_value_ids() co
     if (klotz_offset == klotz_offset_null) {
       chunk_offset_to_value_id[chunk_offset] = value_id_null;
     } else {
-      // Must point to a string begin.
-      if (klotz_offset > 0) {
-        DebugAssert((*dictionary())[klotz_offset - 1] == '\0', "Klotz offset points into middle of string!");
-      }
-      DebugAssert(reverse_offset_vector.contains(klotz_offset), "Reverse Klotz offset not found!");
       chunk_offset_to_value_id[chunk_offset] = reverse_offset_vector[klotz_offset];
     }
   }

@@ -251,4 +251,34 @@ TEST_F(StorageVariableStringDictionarySegmentTest, TestVectorIterator) {
   EXPECT_EQ("Bill", *--third);
 }
 
+TEST_F(StorageVariableStringDictionarySegmentTest, MediumSizeCompression) {
+  // Goal of this test is to force different sizes for offsets and ValueIDs.
+  // #ValueID < max(offset)
+
+  constexpr size_t DATA_SIZE = 512;
+  auto as = std::array<char, DATA_SIZE + 1>{};
+  as.fill('a');
+  as[DATA_SIZE] = '\0';
+  const auto a = pmr_string{as.data()};
+
+  auto bs = std::array<char, DATA_SIZE + 1>{};
+  bs.fill('b');
+  bs[DATA_SIZE] = '\0';
+  const auto b = pmr_string{bs.data()};
+
+  vs_str->append(a);
+  vs_str->append(b);
+
+  const auto dict_segment = dynamic_pointer_cast<VariableStringDictionarySegment<pmr_string>>(ChunkEncoder::encode_segment(vs_str, DataType::String,
+                                                         SegmentEncodingSpec{EncodingType::VariableStringDictionary}));
+
+  // If we reach this pont
+  const auto compressed_value_ids = dict_segment->attribute_vector();
+  const auto value_ids = compressed_value_ids->create_base_decompressor();
+
+  // If our offsets are misaligned, these should fail.
+  EXPECT_EQ(a, dict_segment->get_typed_value(ChunkOffset{0}));
+  EXPECT_EQ(b, dict_segment->get_typed_value(ChunkOffset{1}));
+}
+
 }  // namespace hyrise
