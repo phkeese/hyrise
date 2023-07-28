@@ -101,10 +101,9 @@ class VariableStringDictionaryEncoder : public SegmentEncoder<VariableStringDict
       }
     }
 
-    const auto max_value_id = current_value_id;
     const auto compressed_chunk_offset_to_klotz_offset = std::shared_ptr<const BaseCompressedVector>(compress_vector(
         *chunk_offset_to_klotz_offset, SegmentEncoder<VariableStringDictionaryEncoder>::vector_compression_type(),
-        allocator, {max_value_id}));
+        allocator, {klotz->size()}));
 
     return std::make_shared<VariableStringDictionarySegment<pmr_string>>(klotz, compressed_chunk_offset_to_klotz_offset,
                                                                          offset_vector);
