@@ -135,24 +135,38 @@ ValueID::base_type VariableStringDictionarySegment<T>::unique_values_count() con
 template <typename T>
 std::shared_ptr<const BaseCompressedVector>
 VariableStringDictionarySegment<T>::_create_attribute_vector_with_value_ids() const {
+  // Maps offset in Klotz to ValueIDs
   auto reverse_offset_vector = std::unordered_map<uint32_t, ValueID>();
+
+  // Insert all pairs of offset <-> ValueID
   const auto offsets_size = unique_values_count();
   for (auto value_id = ValueID{0}; value_id < offsets_size; ++value_id) {
     const auto offset = (*_offset_vector)[value_id];
     reverse_offset_vector.insert({offset, value_id});
   }
 
+  // Number of entries in this segment. NOT unique values.
   const auto attribute_vector_size = _attribute_vector->size();
+  // Maps ChunkOffset -> ValueID (one ValueID per entry, duplication highly likely)
   auto chunk_offset_to_value_id = pmr_vector<uint32_t>(attribute_vector_size);
 
+  // ValueID to emit for NULL_VALUE
   const auto value_id_null = null_value_id();
+  // Corresponding offset, end of Klotz
   const auto klotz_offset_null = _dictionary->size();
+
+  // Insert mappings of ChunkOffset -> ValueID
   for (auto chunk_offset = ChunkOffset{0}; chunk_offset < attribute_vector_size; ++chunk_offset) {
-    const auto offset = _decompressor->get(chunk_offset);
-    if (offset == klotz_offset_null) {
+    const auto klotz_offset = _decompressor->get(chunk_offset);
+    if (klotz_offset == klotz_offset_null) {
       chunk_offset_to_value_id[chunk_offset] = value_id_null;
     } else {
-      chunk_offset_to_value_id[chunk_offset] = reverse_offset_vector[offset];
+      // Must point to a string begin.
+      if (klotz_offset > 0) {
+        DebugAssert((*dictionary())[klotz_offset - 1] == '\0', "Klotz offset points into middle of string!");
+      }
+      DebugAssert(reverse_offset_vector.contains(klotz_offset), "Reverse Klotz offset not found!");
+      chunk_offset_to_value_id[chunk_offset] = reverse_offset_vector[klotz_offset];
     }
   }
 

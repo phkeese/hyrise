@@ -109,11 +109,12 @@ class VariableStringDictionarySegment : public BaseDictionarySegment {
 
  protected:
   const std::shared_ptr<const pmr_vector<char>> _dictionary;
-  // Maps chunk offsets to offsets.
+  // Maps ChunkOffset -> Klotz offset.
   const std::shared_ptr<const BaseCompressedVector> _attribute_vector;
+  // Accessor for ChunkOffset -> Klotz offset.
+  std::unique_ptr<BaseVectorDecompressor> _decompressor;
   // Maps chunk offsets to value ids. Cannot be generated lazy.
   mutable std::shared_ptr<const BaseCompressedVector> _attribute_vector_with_value_ids;
-  std::unique_ptr<BaseVectorDecompressor> _decompressor;
   // Maps value ids to dictionary offsets.
   const std::shared_ptr<const pmr_vector<uint32_t>> _offset_vector;
 };
