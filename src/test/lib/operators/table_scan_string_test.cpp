@@ -36,6 +36,13 @@ class OperatorsTableScanStringTest : public BaseTest, public ::testing::WithPara
     _tw_string->never_clear_output();
     _tw_string->execute();
 
+    // load string table
+    std::shared_ptr<Table> test_table_string_tpch =
+        load_table("resources/test_data/tbl/int_string_like_tpch.tbl", ChunkOffset{2});
+    _tw_tpch = std::make_shared<TableWrapper>(test_table_string_tpch);
+    _tw_tpch->never_clear_output();
+    _tw_tpch->execute();
+
     // load special chars table
     std::shared_ptr<Table> test_table_special_chars =
         load_table("resources/test_data/tbl/int_string_like_special_chars.tbl", ChunkOffset{2});
@@ -59,12 +66,12 @@ class OperatorsTableScanStringTest : public BaseTest, public ::testing::WithPara
     }
   }
 
-  std::shared_ptr<TableWrapper> _tw, _tw_special_chars, _tw_string, _tw_string_compressed;
+  std::shared_ptr<TableWrapper> _tw, _tw_special_chars, _tw_string, _tw_string_compressed, _tw_tpch;
 };
 
 INSTANTIATE_TEST_SUITE_P(EncodingTypes, OperatorsTableScanStringTest,
                          ::testing::Values(EncodingType::Unencoded, EncodingType::Dictionary,
-                                           EncodingType::FixedStringDictionary, EncodingType::RunLength),
+                                           EncodingType::FixedStringDictionary, EncodingType::RunLength, EncodingType::VariableStringDictionary),
                          enum_formatter<EncodingType>);
 
 TEST_P(OperatorsTableScanStringTest, ScanEquals) {
@@ -236,6 +243,15 @@ TEST_F(OperatorsTableScanStringTest, ScanLikeContaining) {
   std::shared_ptr<Table> expected_result =
       load_table("resources/test_data/tbl/int_string_like_containing.tbl", ChunkOffset{1});
   auto scan = create_table_scan(_tw_string, ColumnID{1}, PredicateCondition::Like, "%schifffahrtsgesellschaft%");
+  scan->execute();
+  EXPECT_TABLE_EQ_UNORDERED(scan->get_output(), expected_result);
+}
+
+// PredicateCondition::Like - Containing multiple words
+TEST_P(OperatorsTableScanStringTest, ScanMultipleLikeContaining) {
+  std::shared_ptr<Table> expected_result =
+      load_table("resources/test_data/tbl/int_string_like_containing_tpch.tbl", ChunkOffset{1});
+  auto scan = create_table_scan(_tw_tpch, ColumnID{1}, PredicateCondition::Like, "%special%requests%");
   scan->execute();
   EXPECT_TABLE_EQ_UNORDERED(scan->get_output(), expected_result);
 }

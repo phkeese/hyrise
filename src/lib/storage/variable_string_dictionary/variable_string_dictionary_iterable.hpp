@@ -3,7 +3,6 @@
 #include <type_traits>
 
 #include "storage/abstract_segment.hpp"
-#include "storage/dictionary_segment.hpp"
 #include "storage/fixed_string_dictionary_segment.hpp"
 #include "storage/segment_iterables.hpp"
 #include "storage/variable_string_dictionary_segment.hpp"
@@ -11,18 +10,14 @@
 
 namespace hyrise {
 
-template <typename T, typename Dictionary>
-class DictionarySegmentIterable : public PointAccessibleSegmentIterable<DictionarySegmentIterable<T, Dictionary>> {
+template <typename T>
+class VariableStringDictionarySegmentIterable
+    : public PointAccessibleSegmentIterable<VariableStringDictionarySegmentIterable<T>> {
  public:
   using ValueType = T;
+  using Dictionary = pmr_vector<char>;
 
-  explicit DictionarySegmentIterable(const DictionarySegment<T>& segment)
-      : _segment{segment}, _dictionary(segment.dictionary()) {}
-
-  explicit DictionarySegmentIterable(const FixedStringDictionarySegment<pmr_string>& segment)
-      : _segment{segment}, _dictionary(segment.fixed_string_dictionary()) {}
-
-  explicit DictionarySegmentIterable(const VariableStringDictionarySegment<pmr_string>& segment)
+  explicit VariableStringDictionarySegmentIterable(const VariableStringDictionarySegment<T>& segment)
       : _segment{segment}, _dictionary(segment.dictionary()) {}
 
   template <typename Functor>
@@ -30,14 +25,19 @@ class DictionarySegmentIterable : public PointAccessibleSegmentIterable<Dictiona
     _segment.access_counter[SegmentAccessCounter::AccessType::Sequential] += _segment.size();
     _segment.access_counter[SegmentAccessCounter::AccessType::Dictionary] += _segment.size();
 
-    resolve_compressed_vector_type(*_segment.attribute_vector(), [&](const auto& vector) {
+    resolve_compressed_vector_type(*_segment.attribute_vector_offsets(), [this, &functor](const auto& vector) {
       using CompressedVectorIterator = decltype(vector.cbegin());
       using DictionaryIteratorType = decltype(_dictionary->cbegin());
 
+      const auto& offset_vector = _segment.offset_vector();
+
       auto begin = Iterator<CompressedVectorIterator, DictionaryIteratorType>{
-          _dictionary->cbegin(), _segment.null_value_id(), vector.cbegin(), ChunkOffset{0u}};
+          _dictionary->cbegin(), static_cast<uint32_t>(_dictionary->size()),
+          vector.cbegin(), ChunkOffset{0u}, offset_vector};
       auto end = Iterator<CompressedVectorIterator, DictionaryIteratorType>{
-          _dictionary->cbegin(), _segment.null_value_id(), vector.cend(), static_cast<ChunkOffset>(_segment.size())};
+          _dictionary->cbegin(), static_cast<uint32_t>(_dictionary->size()),
+          vector.cend(), static_cast<ChunkOffset>(_segment.size()),
+          offset_vector};
 
       functor(begin, end);
     });
@@ -48,19 +48,20 @@ class DictionarySegmentIterable : public PointAccessibleSegmentIterable<Dictiona
     _segment.access_counter[SegmentAccessCounter::access_type(*position_filter)] += position_filter->size();
     _segment.access_counter[SegmentAccessCounter::AccessType::Dictionary] += position_filter->size();
 
-    resolve_compressed_vector_type(*_segment.attribute_vector(), [&](const auto& vector) {
-      using Decompressor = std::decay_t<decltype(vector.create_decompressor())>;
-      using DictionaryIteratorType = decltype(_dictionary->cbegin());
+    resolve_compressed_vector_type(
+        *_segment.attribute_vector_offsets(), [this, &functor, &position_filter](const auto& vector) {
+          using Decompressor = std::decay_t<decltype(vector.create_decompressor())>;
+          using DictionaryIteratorType = decltype(_dictionary->cbegin());
 
-      using PosListIteratorType = decltype(position_filter->cbegin());
-      auto begin = PointAccessIterator<Decompressor, DictionaryIteratorType, PosListIteratorType>{
-          _dictionary->cbegin(), _segment.null_value_id(), vector.create_decompressor(), position_filter->cbegin(),
-          position_filter->cbegin()};
-      auto end = PointAccessIterator<Decompressor, DictionaryIteratorType, PosListIteratorType>{
-          _dictionary->cbegin(), _segment.null_value_id(), vector.create_decompressor(), position_filter->cbegin(),
-          position_filter->cend()};
-      functor(begin, end);
-    });
+          using PosListIteratorType = decltype(position_filter->cbegin());
+          auto begin = PointAccessIterator<Decompressor, DictionaryIteratorType, PosListIteratorType>{
+              _dictionary->cbegin(), static_cast<uint32_t>(_dictionary->size()), vector.create_decompressor(),
+              position_filter->cbegin(), position_filter->cbegin(), _segment.offset_vector()};
+          auto end = PointAccessIterator<Decompressor, DictionaryIteratorType, PosListIteratorType>{
+              _dictionary->cbegin(), static_cast<uint32_t>(_dictionary->size()), vector.create_decompressor(),
+              position_filter->cbegin(), position_filter->cend(), _segment.offset_vector()};
+          functor(begin, end);
+        });
   }
 
   size_t _on_size() const {
@@ -73,14 +74,15 @@ class DictionarySegmentIterable : public PointAccessibleSegmentIterable<Dictiona
       : public AbstractSegmentIterator<Iterator<CompressedVectorIterator, DictionaryIteratorType>, SegmentPosition<T>> {
    public:
     using ValueType = T;
-    using IterableType = DictionarySegmentIterable<T, Dictionary>;
+    using IterableType = VariableStringDictionarySegmentIterable<T>;
 
-    Iterator(DictionaryIteratorType dictionary_begin_it, ValueID null_value_id, CompressedVectorIterator attribute_it,
-             ChunkOffset chunk_offset)
+    Iterator(DictionaryIteratorType dictionary_begin_it, uint32_t null_offset, CompressedVectorIterator attribute_it,
+             ChunkOffset chunk_offset, const std::shared_ptr<const pmr_vector<uint32_t>>& offset_vector)
         : _dictionary_begin_it{std::move(dictionary_begin_it)},
-          _null_value_id{null_value_id},
+          _null_offset{null_offset},
           _attribute_it{std::move(attribute_it)},
-          _chunk_offset{chunk_offset} {}
+          _chunk_offset{chunk_offset},
+          _offset_vector{offset_vector} {}
 
    private:
     friend class boost::iterator_core_access;  // grants the boost::iterator_facade access to the private interface
@@ -109,40 +111,45 @@ class DictionarySegmentIterable : public PointAccessibleSegmentIterable<Dictiona
     }
 
     SegmentPosition<T> dereference() const {
-      const auto value_id = static_cast<ValueID>(*_attribute_it);
-      const auto is_null = (value_id == _null_value_id);
+      const auto offset = static_cast<ValueID>(*_attribute_it);
+      const auto is_null = (offset == _null_offset);
 
       if (is_null) {
         return SegmentPosition<T>{T{}, true, _chunk_offset};
       }
 
-      return SegmentPosition<T>{T{*(_dictionary_begin_it + value_id)}, false, _chunk_offset};
+      // TODO(student): Remove &* Hack to get pointer to iterator's data
+      return SegmentPosition<T>{T{&*(_dictionary_begin_it + offset)}, false, _chunk_offset};
     }
 
    private:
     DictionaryIteratorType _dictionary_begin_it;
-    ValueID _null_value_id;
+    uint32_t _null_offset;
     CompressedVectorIterator _attribute_it;
     ChunkOffset _chunk_offset;
+    std::shared_ptr<const pmr_vector<uint32_t>> _offset_vector;
   };
 
+  // TODO(student): Add offset_vector also here.
   template <typename Decompressor, typename DictionaryIteratorType, typename PosListIteratorType>
   class PointAccessIterator : public AbstractPointAccessSegmentIterator<
                                   PointAccessIterator<Decompressor, DictionaryIteratorType, PosListIteratorType>,
                                   SegmentPosition<T>, PosListIteratorType> {
    public:
     using ValueType = T;
-    using IterableType = DictionarySegmentIterable<T, Dictionary>;
+    using IterableType = VariableStringDictionarySegmentIterable<T>;
 
-    PointAccessIterator(DictionaryIteratorType dictionary_begin_it, const ValueID null_value_id,
+    PointAccessIterator(DictionaryIteratorType dictionary_begin_it, const uint32_t null_offset,
                         Decompressor attribute_decompressor, PosListIteratorType position_filter_begin,
-                        PosListIteratorType position_filter_it)
+                        PosListIteratorType position_filter_it,
+                        const std::shared_ptr<const pmr_vector<uint32_t>>& offset_vector)
         : AbstractPointAccessSegmentIterator<
               PointAccessIterator<Decompressor, DictionaryIteratorType, PosListIteratorType>, SegmentPosition<T>,
               PosListIteratorType>{std::move(position_filter_begin), std::move(position_filter_it)},
           _dictionary_begin_it{std::move(dictionary_begin_it)},
-          _null_value_id{null_value_id},
-          _attribute_decompressor{std::move(attribute_decompressor)} {}
+          _null_offset{null_offset},
+          _attribute_decompressor{std::move(attribute_decompressor)},
+          _offset_vector{offset_vector} {}
 
    private:
     friend class boost::iterator_core_access;  // grants the boost::iterator_facade access to the private interface
@@ -150,38 +157,26 @@ class DictionarySegmentIterable : public PointAccessibleSegmentIterable<Dictiona
     SegmentPosition<T> dereference() const {
       const auto& chunk_offsets = this->chunk_offsets();
 
-      const auto value_id = _attribute_decompressor.get(chunk_offsets.offset_in_referenced_chunk);
-      const auto is_null = (value_id == _null_value_id);
+      const auto offset = _attribute_decompressor.get(chunk_offsets.offset_in_referenced_chunk);
+      const auto is_null = (offset == _null_offset);
 
       if (is_null) {
         return SegmentPosition<T>{T{}, true, chunk_offsets.offset_in_poslist};
       }
 
-      return SegmentPosition<T>{T{*(_dictionary_begin_it + value_id)}, false, chunk_offsets.offset_in_poslist};
+      return SegmentPosition<T>{T{&*(_dictionary_begin_it + offset)}, false, chunk_offsets.offset_in_poslist};
     }
 
    private:
     DictionaryIteratorType _dictionary_begin_it;
-    ValueID _null_value_id;
+    uint32_t _null_offset;
     mutable Decompressor _attribute_decompressor;
+    std::shared_ptr<const pmr_vector<uint32_t>> _offset_vector;
   };
 
  private:
-  const BaseDictionarySegment& _segment;
+  const VariableStringDictionarySegment<pmr_string>& _segment;
   std::shared_ptr<const Dictionary> _dictionary;
 };
-
-template <typename T>
-struct is_dictionary_segment_iterable {
-  static constexpr auto value = false;
-};
-
-template <template <typename T, typename Dictionary> typename Iterable, typename T, typename Dictionary>
-struct is_dictionary_segment_iterable<Iterable<T, Dictionary>> {
-  static constexpr auto value = std::is_same_v<DictionarySegmentIterable<T, Dictionary>, Iterable<T, Dictionary>>;
-};
-
-template <typename T>
-inline constexpr bool is_dictionary_segment_iterable_v = is_dictionary_segment_iterable<T>::value;
 
 }  // namespace hyrise
