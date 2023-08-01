@@ -14,7 +14,9 @@ VariableStringDictionarySegment<T>::VariableStringDictionarySegment(
       _dictionary{dictionary},
       _attribute_vector{attribute_vector},
       _decompressor{attribute_vector->create_base_decompressor()},
-      _offset_vector{offset_vector} {
+      _offset_vector{offset_vector},
+      _attribute_vector_with_value_ids{_create_attribute_vector_with_value_ids()}
+{
   // NULL is represented by _offset_vector.size(). INVALID_VALUE_ID, which is the highest possible number in
   // ValueID::base_type (2^32 - 1), is needed to represent "value not found" in calls to lower_bound/upper_bound.
   // For a VariableStringDictionarySegment of the max size Chunk::MAX_SIZE, those two values overlap.
@@ -193,10 +195,6 @@ VariableStringDictionarySegment<T>::_create_attribute_vector_with_value_ids() co
 
 template <typename T>
 std::shared_ptr<const BaseCompressedVector> VariableStringDictionarySegment<T>::attribute_vector() const {
-  if (!_attribute_vector_with_value_ids) {
-    _attribute_vector_with_value_ids = _create_attribute_vector_with_value_ids();
-  }
-
   return _attribute_vector_with_value_ids;
 }
 
